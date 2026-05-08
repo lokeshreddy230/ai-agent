@@ -146,7 +146,9 @@ export async function POST(request: Request) {
         try {
           const prompt = `Extract priority queue items from these high-priority summaries:\n${batchSummaries.join("\n")}\n\nReturn strict JSON format: { "priorityQueue": [{"level": "HIGH/MEDIUM/LOW", "category": "...", "description": "...", "reason": "...", "confidence": "99%"}] }`;
           const comp = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: "llama3-8b-8192", temperature: 0.1, response_format: { type: "json_object" } });
-          priorityQueueData = JSON.parse(comp.choices[0]?.message?.content || "{}").priorityQueue || [];
+          const parsed = JSON.parse(comp.choices[0]?.message?.content || "{}");
+          priorityQueueData = parsed.priorityQueue || [];
+          if (priorityQueueData.length === 0) throw new Error("Empty priorityQueue");
         } catch(e) {
           priorityQueueStatus = "FALLBACK GENERATED";
           priorityQueueData = clusters.highPriority.map(em => ({ level: "MEDIUM", category: "Inbox", description: em.s, reason: "Auto-clustered", confidence: "90%" })).slice(0, 5);
@@ -164,6 +166,7 @@ export async function POST(request: Request) {
           const parsed = JSON.parse(comp.choices[0]?.message?.content || "{}");
           oppData = parsed.opportunities || [];
           netData = parsed.networkingActivity || [];
+          if (oppData.length === 0 && netData.length === 0) throw new Error("Empty opportunities/networking");
         } catch(e) {
           oppStatus = "FALLBACK GENERATED";
           oppData = ["Review raw inbox for opportunities"];
@@ -184,6 +187,7 @@ export async function POST(request: Request) {
           execData = parsed.executiveIntelligence || [];
           stratData = parsed.strategicInsights || [];
           actionData = parsed.recommendedActions || [];
+          if (execData.length === 0 && stratData.length === 0) throw new Error("Empty executive/strategic insights");
         } catch(e) {
           execStatus = "FALLBACK GENERATED";
           stratData = [{ insight: "Rate limit prevented full AI synthesis.", confidence: "100%" }];

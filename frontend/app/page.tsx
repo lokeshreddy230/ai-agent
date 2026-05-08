@@ -482,13 +482,18 @@ export default function Home() {
               )}
               {Object.keys(dashboardData).length > 0 && (() => {
                 let data = dashboardData;
+                
+                const priorityQueue = data.priorityQueue ?? [];
+                const opportunities = data.opportunities ?? [];
+                const networkingActivity = data.networkingActivity ?? [];
+                const strategicInsights = data.strategicInsights ?? [];
+                const recommendedActions = data.recommendedActions ?? [];
 
                 return (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8 pb-8">
                     
                     {/* Priority Queue */}
-                    {data.priorityQueue && data.priorityQueue.length > 0 && (
-                      <section>
+                    <section>
                         <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
                           <Target className="text-red-400" size={18} /> Priority Queue
                           {dashboardData.priorityQueue_status && (
@@ -498,7 +503,9 @@ export default function Home() {
                           )}
                         </h3>
                         <div className="grid gap-4">
-                          {data.priorityQueue.map((item: any, i: number) => (
+                          {priorityQueue.length === 0 ? (
+                            <div className="p-4 rounded-xl border bg-white/5 border-white/10 text-gray-400 text-sm text-center italic">No high-priority items detected in this cycle.</div>
+                          ) : priorityQueue.map((item: any, i: number) => (
                             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} key={i} 
                               className={`p-4 rounded-xl border flex gap-4 ${
                                 item.level === 'HIGH' ? 'bg-red-500/10 border-red-500/20' : 
@@ -530,11 +537,9 @@ export default function Home() {
                           ))}
                         </div>
                       </section>
-                    )}
 
                     {/* Opportunities & Networking */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {data.opportunities && data.opportunities.length > 0 && (
                         <section>
                           <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
                           <Lightbulb className="text-amber-400" size={18} /> Opportunities
@@ -545,7 +550,9 @@ export default function Home() {
                           )}
                         </h3>
                           <div className="space-y-3">
-                            {data.opportunities.map((item: any, i: number) => (
+                            {opportunities.length === 0 ? (
+                              <div className="p-4 rounded-xl border bg-white/5 border-white/10 text-gray-400 text-sm text-center italic">Awaiting new opportunities...</div>
+                            ) : opportunities.map((item: any, i: number) => (
                               <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-xl">
                                 <h4 className="text-white font-medium text-sm mb-1">{item.title}</h4>
                                 <p className="text-gray-400 text-xs mb-2">{item.description}</p>
@@ -554,9 +561,7 @@ export default function Home() {
                             ))}
                           </div>
                         </section>
-                      )}
 
-                      {data.networkingActivity && data.networkingActivity.length > 0 && (
                         <section>
                           <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
                           <Users className="text-blue-400" size={18} /> Networking Activity
@@ -567,7 +572,9 @@ export default function Home() {
                           )}
                         </h3>
                           <div className="space-y-3">
-                            {data.networkingActivity.map((item: any, i: number) => (
+                            {networkingActivity.length === 0 ? (
+                              <div className="p-4 rounded-xl border bg-white/5 border-white/10 text-gray-400 text-sm text-center italic">No new networking activity detected.</div>
+                            ) : networkingActivity.map((item: any, i: number) => (
                               <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-xl">
                                 <h4 className="text-white font-medium text-sm mb-1">{item.title}</h4>
                                 <p className="text-gray-400 text-xs">{item.description}</p>
@@ -575,12 +582,10 @@ export default function Home() {
                             ))}
                           </div>
                         </section>
-                      )}
                     </div>
 
                     {/* Strategic Insights & Recommended Actions */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {data.strategicInsights && data.strategicInsights.length > 0 && (
                         <section>
                           <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
                           <TrendingUp className="text-purple-400" size={18} /> Strategic Insights
@@ -591,7 +596,9 @@ export default function Home() {
                           )}
                         </h3>
                           <ul className="space-y-2">
-                            {data.strategicInsights.map((insight: any, i: number) => (
+                            {strategicInsights.length === 0 ? (
+                              <div className="p-4 rounded-xl border bg-white/5 border-white/10 text-gray-400 text-sm text-center italic">Strategic insights will appear here...</div>
+                            ) : strategicInsights.map((insight: any, i: number) => (
                               <motion.li whileHover={{ scale: 1.02 }} key={i} className="flex gap-3 text-sm text-gray-300 bg-yellow-500/5 p-3 rounded-lg border border-yellow-500/10 transition-all">
                                 <TrendingUp size={16} className="text-yellow-500 shrink-0 mt-0.5" />
                                 <div className="flex justify-between items-start w-full">
@@ -602,9 +609,7 @@ export default function Home() {
                             ))}
                           </ul>
                         </section>
-                      )}
 
-                      {data.recommendedActions && data.recommendedActions.length > 0 && (
                         <section>
                           <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
                           <Zap className="text-emerald-400" size={18} /> Action Items
@@ -615,7 +620,9 @@ export default function Home() {
                           )}
                         </h3>
                           <ul className="space-y-2">
-                            {data.recommendedActions.map((action: any, i: number) => (
+                            {recommendedActions.length === 0 ? (
+                              <div className="p-4 rounded-xl border bg-white/5 border-white/10 text-gray-400 text-sm text-center italic">No immediate action items required.</div>
+                            ) : recommendedActions.map((action: any, i: number) => (
                               <motion.li whileHover={{ scale: 1.02 }} key={i} className="flex gap-3 text-sm text-gray-300 bg-blue-500/5 p-3 rounded-lg border border-blue-500/10 transition-all">
                                 <Zap size={16} className="text-blue-500 shrink-0 mt-0.5" />
                                 <div className="flex justify-between items-start w-full">
@@ -626,7 +633,6 @@ export default function Home() {
                             ))}
                           </ul>
                         </section>
-                      )}
                     </div>
                   </motion.div>
                 );
