@@ -7,7 +7,7 @@ import Groq from 'groq-sdk';
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // Allow up to 60s for Vercel Hobby/Pro if supported
+export const maxDuration = 60; 
 
 export async function POST(request: Request) {
   const encoder = new TextEncoder();
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       };
 
       try {
-        sendEvent("crew_start", { message: "Starting Progressive Multi-Stage Intelligence Pipeline." });
+        sendEvent("crew_start", { message: "Starting Distributed Micro-Generation Pipeline." });
 
         // 1. Fetch Gmail Data
         const cookieStore = await cookies();
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
         }
 
         // 2. Pre-AI Smart Clustering (0 Tokens)
-        sendEvent("agent_update", { agent: "Clustering Engine", status: "working", details: "Applying heuristic clustering to reduce tokens..." });
+        sendEvent("agent_update", { agent: "Clustering Engine", status: "working", details: "Applying heuristic clustering..." });
         
         let clusters = {
           linkedin: [] as any[],
@@ -80,13 +80,7 @@ export async function POST(request: Request) {
           else clusters.highPriority.push(em);
         }
 
-        const clusteredSummary = `
-Auto-Clustered Noise (Bypassed AI):
-- LinkedIn Notifications: ${clusters.linkedin.length}
-- GitHub Alerts: ${clusters.github.length}
-- Promotions/Noise: ${clusters.promotions.length}
-`;
-        sendEvent("agent_update", { agent: "Clustering Engine", status: "completed", details: `Clustered ${minifiedEmails.length - clusters.highPriority.length} noisy emails. ${clusters.highPriority.length} high-priority emails remain.` });
+        sendEvent("agent_update", { agent: "Clustering Engine", status: "completed", details: `Isolated ${clusters.highPriority.length} high-priority signals.` });
 
         // 3. Fetch Tavily
         let rawTavily: any[] = [];
@@ -120,85 +114,91 @@ Auto-Clustered Noise (Bypassed AI):
         for (let i = 0; i < clusters.highPriority.length; i += BATCH_SIZE) {
           batchIndex++;
           const batch = clusters.highPriority.slice(i, i + BATCH_SIZE);
-          sendEvent("agent_update", { agent: "Batch Processor", status: "working", details: `Processing batch ${batchIndex} (${batch.length} emails)...` });
+          sendEvent("agent_update", { agent: "Batch Processor", status: "working", details: `Summarizing batch ${batchIndex} (${batch.length} emails)...` });
           
           const batchPrompt = `Summarize the key operational signals from these ${batch.length} emails. Be extremely concise. Emails:\n${JSON.stringify(batch)}`;
           
           try {
             const completion = await groq.chat.completions.create({
               messages: [{ role: "user", content: batchPrompt }],
-              model: "llama3-8b-8192", // Use smaller model for fast batching
+              model: "llama3-8b-8192", 
               temperature: 0.1,
             });
             batchSummaries.push(`Batch ${batchIndex}:\n${completion.choices[0]?.message?.content}`);
             sendEvent("agent_update", { agent: "Batch Processor", status: "completed", details: `Batch ${batchIndex} summarized.` });
-            
-            // Sleep slightly to respect rate limits if there are more batches
             if (i + BATCH_SIZE < clusters.highPriority.length) {
                 await new Promise(resolve => setTimeout(resolve, 1500));
             }
           } catch (e: any) {
             console.error(`Groq Batch ${batchIndex} Error:`, e);
-            sendEvent("agent_update", { agent: "System", status: "failed", details: `Batch ${batchIndex} skipped due to rate limits.` });
-            batchSummaries.push(`Batch ${batchIndex}: [SKIPPED DUE TO API LIMITS]`);
-            break; // Stop processing further batches to save limits for synthesis
+            sendEvent("agent_update", { agent: "System", status: "failed", details: `Batch ${batchIndex} skipped due to API limits.` });
+            break; 
           }
         }
 
-        const combinedPhase1Output = clusteredSummary + "\n\n" + batchSummaries.join("\n\n") + "\n\nExecutive News:\n" + executiveDataJson;
+        // 5. Distributed Micro-Generation (Phase 2 Replacement)
+        sendEvent("system", { message: "Initiating Distributed Sectional Rendering..." });
 
-        // 5. Phase 2: Final Report Generation
-        sendEvent("system", { message: "Executing Phase 2: Final Executive Synthesis..." });
-        
-        const phase2Prompt = `
-Using the following batched summaries and clustered data, generate a strict JSON payload conforming to the dashboard schema. Do NOT include markdown like \`\`\`json. Return ONLY raw JSON.
-
-Intelligence Payload:
-${combinedPhase1Output}
-
-Expected JSON format:
-{
-  "criticalAlerts": [],
-  "opportunities": [],
-  "networkingActivity": [],
-  "strategicInsights": [{"insight": "...", "confidence": "95%"}],
-  "recommendedActions": [{"action": "...", "confidence": "99%"}],
-  "priorityQueue": [{"level": "HIGH/MEDIUM/LOW", "category": "...", "description": "...", "reason": "...", "confidence": "99%"}],
-  "executiveIntelligence": [{"name": "Author", "originalContent": "...", "sourceUrl": "...", "provider": "...", "fetchedAt": "...", "aiSummary": "...", "strategicImplication": "...", "recommendedAction": "...", "confidence": "98%"}]
-}`;
-
-        let finalReport = "{}";
+        // Section 1: Priority Queue
+        sendEvent("agent_update", { agent: "Report Agent", status: "working", details: "Generating Priority Queue..." });
+        let priorityQueueData = [];
+        let priorityQueueStatus = "LIVE GENERATED";
         try {
-          const completion2 = await groq.chat.completions.create({
-            messages: [{ role: "user", content: phase2Prompt }],
-            model: "llama3-70b-8192",
-            temperature: 0.2,
-            response_format: { type: "json_object" }
-          });
-          finalReport = completion2.choices[0]?.message?.content || "{}";
-          sendEvent("agent_update", { agent: "Report Agent", status: "completed", details: "Executive synthesis complete." });
-        } catch (e: any) {
-           console.error("Groq Phase 2 Error:", e);
-           sendEvent("agent_update", { agent: "System", status: "failed", details: "AI Phase 2 Rate Limit Exceeded. Generating Fallback Synthesis." });
-           
-           // Dynamic Fallback payload using the batch data so dashboard doesn't collapse!
-           finalReport = JSON.stringify({
-             criticalAlerts: [`Rate limit recovery active. ${batchSummaries.length} batches processed.`].concat(clusters.highPriority.map((em: any) => em.s).slice(0, 2)),
-             opportunities: ["Review raw inbox clusters"],
-             networkingActivity: [`${clusters.linkedin.length} LinkedIn notifications detected.`],
-             strategicInsights: [{ insight: "System is operating under heavy AI load. Graceful degradation enabled.", confidence: "100%" }],
-             recommendedActions: [{ action: "Review high-priority batch summaries manually.", confidence: "99%" }],
-             priorityQueue: clusters.highPriority.map((em: any) => ({ level: "MEDIUM", category: "Inbox", description: em.s, reason: "Fallback Processing", confidence: "80%" })).slice(0, 5),
-             executiveIntelligence: []
-           });
+          const prompt = `Extract priority queue items from these high-priority summaries:\n${batchSummaries.join("\n")}\n\nReturn strict JSON format: { "priorityQueue": [{"level": "HIGH/MEDIUM/LOW", "category": "...", "description": "...", "reason": "...", "confidence": "99%"}] }`;
+          const comp = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: "llama3-8b-8192", temperature: 0.1, response_format: { type: "json_object" } });
+          priorityQueueData = JSON.parse(comp.choices[0]?.message?.content || "{}").priorityQueue || [];
+        } catch(e) {
+          priorityQueueStatus = "FALLBACK GENERATED";
+          priorityQueueData = clusters.highPriority.map(em => ({ level: "MEDIUM", category: "Inbox", description: em.s, reason: "Auto-clustered", confidence: "90%" })).slice(0, 5);
         }
+        sendEvent("section_update", { section: "priorityQueue", status: priorityQueueStatus, data: priorityQueueData });
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-        sendEvent("agent_update", { agent: "Validation Agent", status: "completed", details: "Intelligence verified." });
+        // Section 2: Opportunities & Networking
+        sendEvent("agent_update", { agent: "Report Agent", status: "working", details: "Generating Opportunities & Networking..." });
+        let oppData = [], netData = [];
+        let oppStatus = "LIVE GENERATED";
+        try {
+          const prompt = `Extract opportunities and networking activity from these clustered emails:\n${JSON.stringify(clusters.linkedin)}\n${JSON.stringify(clusters.highPriority)}\n\nReturn strict JSON format: { "opportunities": ["..."], "networkingActivity": ["..."] }`;
+          const comp = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: "llama3-8b-8192", temperature: 0.1, response_format: { type: "json_object" } });
+          const parsed = JSON.parse(comp.choices[0]?.message?.content || "{}");
+          oppData = parsed.opportunities || [];
+          netData = parsed.networkingActivity || [];
+        } catch(e) {
+          oppStatus = "FALLBACK GENERATED";
+          oppData = ["Review raw inbox for opportunities"];
+          netData = clusters.linkedin.map(em => em.s).slice(0, 5);
+        }
+        sendEvent("section_update", { section: "opportunities", status: oppStatus, data: oppData });
+        sendEvent("section_update", { section: "networkingActivity", status: oppStatus, data: netData });
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-        // Final completion event
+        // Section 3: Executive Intelligence & Strategic Insights
+        sendEvent("agent_update", { agent: "Report Agent", status: "working", details: "Generating Strategic Insights..." });
+        let execData = [], stratData = [], actionData = [];
+        let execStatus = "LIVE GENERATED";
+        try {
+          const prompt = `Extract strategic insights, action items, and executive intelligence from:\nNews: ${executiveDataJson}\nSummaries: ${batchSummaries.join("\n")}\n\nReturn strict JSON: { "strategicInsights": [{"insight": "...", "confidence": "95%"}], "recommendedActions": [{"action": "...", "confidence": "99%"}], "executiveIntelligence": [{"name": "...", "originalContent": "...", "sourceUrl": "...", "provider": "...", "fetchedAt": "...", "aiSummary": "...", "strategicImplication": "...", "recommendedAction": "...", "confidence": "98%"}] }`;
+          const comp = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: "llama3-70b-8192", temperature: 0.1, response_format: { type: "json_object" } });
+          const parsed = JSON.parse(comp.choices[0]?.message?.content || "{}");
+          execData = parsed.executiveIntelligence || [];
+          stratData = parsed.strategicInsights || [];
+          actionData = parsed.recommendedActions || [];
+        } catch(e) {
+          execStatus = "FALLBACK GENERATED";
+          stratData = [{ insight: "Rate limit prevented full AI synthesis.", confidence: "100%" }];
+          actionData = [{ action: "Manually review emails and news.", confidence: "99%" }];
+          execData = rawTavily.map(item => ({ name: item.title, originalContent: item.content, sourceUrl: item.url, fetchedAt: new Date().toISOString(), provider: "Tavily", aiSummary: "Auto-extracted", strategicImplication: "Review", recommendedAction: "Read", confidence: "100%" })).slice(0, 3);
+        }
+        sendEvent("section_update", { section: "strategicInsights", status: execStatus, data: stratData });
+        sendEvent("section_update", { section: "recommendedActions", status: execStatus, data: actionData });
+        sendEvent("section_update", { section: "executiveIntelligence", status: execStatus, data: execData });
+
+        sendEvent("agent_update", { agent: "Validation Agent", status: "completed", details: "Sectional rendering complete." });
+
+        // Final completion event (no monolithic report needed anymore)
         const completionPayload = JSON.stringify({
           type: "crew_complete",
-          report: finalReport,
           metadata: {
             source: "LIVE",
             count: emailCount,

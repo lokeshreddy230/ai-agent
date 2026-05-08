@@ -15,6 +15,7 @@ export default function Home() {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [report, setReport] = useState<string | null>(null);
+  const [dashboardData, setDashboardData] = useState<any>({});
   const [agentUpdates, setAgentUpdates] = useState<any[]>([]);
   const [selectedEmail, setSelectedEmail] = useState<any>(null);
   const [isAutonomous, setIsAutonomous] = useState(false);
@@ -151,7 +152,9 @@ export default function Home() {
 
   const handleGenerateReport = async () => {
     setIsGenerating(true);
+    setIsGenerating(true);
     setReport(null);
+    setDashboardData({});
     setAgentUpdates([]);
 
     try {
@@ -179,7 +182,13 @@ export default function Home() {
             if (!line.trim()) continue;
             try {
               const parsedData = JSON.parse(line);
-              if (parsedData.type === "agent_update" || parsedData.type === "system") {
+              if (parsedData.type === "section_update") {
+                setDashboardData((prev: any) => ({
+                  ...prev,
+                  [parsedData.section]: parsedData.data,
+                  [`${parsedData.section}_status`]: parsedData.status
+                }));
+              } else if (parsedData.type === "agent_update" || parsedData.type === "system") {
                 setAgentUpdates((prev) => [...prev, parsedData]);
               } else if (parsedData.type === "crew_complete" || parsedData.report) {
                 finalData = parsedData;
@@ -191,137 +200,45 @@ export default function Home() {
         }
       }
 
-      const data = finalData || { status: "error", fallback_required: true };
+      const metadata = finalData?.metadata || {};
       const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       
-      if (data.status === "error" || data.fallback_required) {
-        console.warn("Backend error, displaying raw live data without AI analysis");
-        setAgentUpdates(prev => [...prev, { type: "system", data: { agent: "System", message: "System Alert: AI analysis pipeline failed (rate limits/parsing). Displaying raw live inbox data." } }]);
-        
-        let fallbackDataObj: any = {
-          criticalAlerts: [],
-          opportunities: [],
-          networkingActivity: [],
-          strategicInsights: [],
-          recommendedActions: [],
-          priorityQueue: [
-            {
-              level: "HIGH",
-              category: "System Error",
-              description: "AI Analysis Pipeline Failed",
-              reason: "Rate limits exceeded or AI parsing failed. Displaying unanalyzed raw data below.",
-              confidence: "100%"
-            }
-          ],
-          sourceEmails: [],
-          executiveIntelligence: []
-        };
-        
-        // If we rescued real emails, inject them!
-        if (data.rescued_emails && data.rescued_emails.length > 0) {
-            fallbackDataObj.sourceEmails = data.rescued_emails.map((email: any) => ({
-                from: email.from,
-                subject: email.subject,
-                snippet: email.snippet,
-                category: "Raw Data",
-                priority: "LOW",
-                analysis: "Raw email. AI analysis unavailable due to rate limits.",
-                whyItMatters: "Fetched directly from inbox.",
-                recommendedAction: "Review manually.",
-                confidence: "100%"
-            }));
-            setEmailCount(data.rescued_emails.length);
-        } else {
-            setEmailCount(0);
-        }
-
-        // Also inject raw executive intelligence if available
-        if (data.rescued_executive && data.rescued_executive.length > 0) {
-            fallbackDataObj.executiveIntelligence = data.rescued_executive.map((item: any) => ({
-                name: item.author || item.title || "Executive Intelligence",
-                originalContent: item.text || item.content || "Content unavailable",
-                sourceUrl: item.postUrl || item.url || "#",
-                fetchedAt: item.publishedAt || item.published_date || "Recent",
-                provider: item.provider || "System API",
-                aiSummary: "Raw intelligence retrieved.",
-                strategicImplication: "Review source for details.",
-                recommendedAction: "Monitor source.",
-                confidence: "100%"
-            }));
-        }
-
-        setReport(JSON.stringify(fallbackDataObj));
-        setDataSource('LIVE');
-        setLastSyncTime(currentTime);
-        setLastSyncTimestamp(Date.now());
-        setNewEmailCount(0);
-        setNewestEmailTime(null);
-        setIsStale(false);
-      } else {
-        let finalReportStr = data.report;
-        // The LLM often hallucinates placeholders like "[sender name]" for emails due to context limits.
-        // We bypass the LLM entirely for the Inbox UI by injecting the raw_emails back into the report!
-        if (data.metadata?.raw_emails && data.metadata.raw_emails.length > 0) {
-            try {
-                let parsedObj = JSON.parse(data.report);
-                parsedObj.sourceEmails = data.metadata.raw_emails.map((email: any) => ({
-                    from: email.from,
-                    subject: email.subject,
-                    snippet: email.snippet,
-                    category: "Live Sync",
-                    priority: "MEDIUM",
-                    analysis: "Direct inbox sync.",
-                    whyItMatters: "Current inbox context.",
-                    recommendedAction: "Review",
-                    confidence: "100%"
-                }));
-                
-                if (data.metadata?.raw_executive && data.metadata.raw_executive.length > 0) {
-                    parsedObj.executiveIntelligence = data.metadata.raw_executive.map((item: any) => ({
-                        name: item.author || item.title || "Executive Intelligence",
-                        originalContent: item.text || item.content || "Content unavailable",
-                        sourceUrl: item.postUrl || item.url || "#",
-                        fetchedAt: item.publishedAt || item.published_date || "Recent",
-                        provider: item.provider || "System API",
-                        aiSummary: "Raw intelligence retrieved.",
-                        strategicImplication: "Review source for details.",
-                        recommendedAction: "Monitor source.",
-                        confidence: "100%"
-                    }));
-                }
-                
-                finalReportStr = JSON.stringify(parsedObj);
-            } catch (e) {
-                console.error("Failed to inject raw emails into report:", e);
-            }
-        }
-        
-        setReport(finalReportStr);
-        setDataSource('LIVE');
-        setLastSyncTime(currentTime);
-        setLastSyncTimestamp(Date.now());
-        setEmailCount(data.metadata?.count || 0);
-        setNewEmailCount(data.metadata?.new_count || 0);
-        
-        if (data.metadata?.newest_timestamp && data.metadata.newest_timestamp !== "Unknown") {
-            const dt = new Date(data.metadata.newest_timestamp);
-            setNewestEmailTime(dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-        }
-        
-        setIsStale(false);
+      if (metadata.raw_emails && metadata.raw_emails.length > 0) {
+        setDashboardData((prev: any) => ({
+          ...prev,
+          sourceEmails: metadata.raw_emails.map((email: any) => ({
+            from: email.from,
+            subject: email.subject,
+            snippet: email.snippet,
+            category: "Live Sync",
+            priority: "MEDIUM",
+            analysis: "Direct inbox sync.",
+            whyItMatters: "Current inbox context.",
+            recommendedAction: "Review",
+            confidence: "100%"
+          }))
+        }));
       }
+
+      setDataSource('LIVE');
+      setLastSyncTime(currentTime);
+      setLastSyncTimestamp(Date.now());
+      setEmailCount(metadata.count || 0);
+      setNewEmailCount(metadata.new_count || 0);
+      
+      if (metadata.newest_timestamp && metadata.newest_timestamp !== "Unknown") {
+          const dt = new Date(metadata.newest_timestamp);
+          setNewestEmailTime(dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      }
+      
+      setIsStale(false);
       setIsGenerating(false);
     } catch (error) {
       console.warn("Network error during report generation:", error);
       const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      setAgentUpdates(prev => [...prev, { type: "system", data: { agent: "System", message: "System Error: Network connectivity failed." } }]);
+      setAgentUpdates((prev) => [...prev, { type: "system", data: { agent: "System", message: "System Error: Network connectivity failed." } }]);
       
-      let fallbackDataObj: any = {
-        criticalAlerts: [],
-        opportunities: [],
-        networkingActivity: [],
-        strategicInsights: [],
-        recommendedActions: [],
+      setDashboardData({
         priorityQueue: [
           {
             level: "HIGH",
@@ -330,13 +247,9 @@ export default function Home() {
             reason: "The dashboard could not reach the local AI server. Please ensure the backend is running.",
             confidence: "100%"
           }
-        ],
-        sourceEmails: [],
-        executiveIntelligence: []
-      };
-      
-      setReport(JSON.stringify(fallbackDataObj));
-      setDataSource('LIVE');
+        ]
+      });
+      setDataSource('DEMO');
       setLastSyncTime(currentTime);
       setLastSyncTimestamp(Date.now());
       setEmailCount(0);
@@ -549,30 +462,24 @@ export default function Home() {
             </h2>
             
             <div className="flex-1 overflow-y-auto w-full no-scrollbar">
-              {!report && !isGenerating && (
+              {!isGenerating && Object.keys(dashboardData).length === 0 && (
                 <div className="h-full flex flex-col items-center justify-center text-gray-500 opacity-60">
                   <BrainCircuit size={64} className="mb-4" />
                   <p>Click "Generate Daily Report" to initiate the AI swarm.</p>
                 </div>
               )}
-              {isGenerating && !report && (
+              {isGenerating && Object.keys(dashboardData).length === 0 && (
                 <div className="h-full flex flex-col items-center justify-center space-y-4">
                   <div className="flex gap-2">
                     <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce"></div>
                     <div className="w-3 h-3 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: "0.2s" }}></div>
                     <div className="w-3 h-3 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: "0.4s" }}></div>
                   </div>
-                  <p className="text-sm text-gray-400 font-medium">Agents are analyzing intelligence...</p>
+                  <p className="text-sm text-gray-400 font-medium">Agents are processing micro-batches...</p>
                 </div>
               )}
-              {report && (() => {
-                let data;
-                try {
-                  const cleaned = report.replace(/```json/g, "").replace(/```/g, "").trim();
-                  data = JSON.parse(cleaned);
-                } catch (e) {
-                  return <div className="text-red-400 p-4 bg-red-900/20 rounded-xl border border-red-500/20 whitespace-pre-wrap">{report}</div>;
-                }
+              {Object.keys(dashboardData).length > 0 && (() => {
+                let data = dashboardData;
 
                 return (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8 pb-8">
@@ -580,7 +487,14 @@ export default function Home() {
                     {/* Priority Queue */}
                     {data.priorityQueue && data.priorityQueue.length > 0 && (
                       <section>
-                        <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2"><Target className="text-red-400" size={18} /> Priority Queue</h3>
+                        <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
+                          <Target className="text-red-400" size={18} /> Priority Queue
+                          {dashboardData.priorityQueue_status && (
+                            <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider ${dashboardData.priorityQueue_status === 'LIVE GENERATED' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/20 text-amber-400 border border-amber-500/20'}`}>
+                              {dashboardData.priorityQueue_status}
+                            </span>
+                          )}
+                        </h3>
                         <div className="grid gap-4">
                           {data.priorityQueue.map((item: any, i: number) => (
                             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} key={i} 
@@ -620,7 +534,14 @@ export default function Home() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {data.opportunities && data.opportunities.length > 0 && (
                         <section>
-                          <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2"><Briefcase className="text-emerald-400" size={18} /> Opportunities</h3>
+                          <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
+                          <Lightbulb className="text-amber-400" size={18} /> Opportunities
+                          {dashboardData.opportunities_status && (
+                            <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider ${dashboardData.opportunities_status === 'LIVE GENERATED' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/20 text-amber-400 border border-amber-500/20'}`}>
+                              {dashboardData.opportunities_status}
+                            </span>
+                          )}
+                        </h3>
                           <div className="space-y-3">
                             {data.opportunities.map((item: any, i: number) => (
                               <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-xl">
@@ -635,7 +556,14 @@ export default function Home() {
 
                       {data.networkingActivity && data.networkingActivity.length > 0 && (
                         <section>
-                          <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2"><Users className="text-purple-400" size={18} /> Networking</h3>
+                          <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
+                          <Users className="text-blue-400" size={18} /> Networking Activity
+                          {dashboardData.networkingActivity_status && (
+                            <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider ${dashboardData.networkingActivity_status === 'LIVE GENERATED' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/20 text-amber-400 border border-amber-500/20'}`}>
+                              {dashboardData.networkingActivity_status}
+                            </span>
+                          )}
+                        </h3>
                           <div className="space-y-3">
                             {data.networkingActivity.map((item: any, i: number) => (
                               <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-xl">
@@ -652,7 +580,14 @@ export default function Home() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {data.strategicInsights && data.strategicInsights.length > 0 && (
                         <section>
-                          <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2"><Lightbulb className="text-yellow-400" size={18} /> Strategic Insights</h3>
+                          <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
+                          <TrendingUp className="text-purple-400" size={18} /> Strategic Insights
+                          {dashboardData.strategicInsights_status && (
+                            <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider ${dashboardData.strategicInsights_status === 'LIVE GENERATED' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/20 text-amber-400 border border-amber-500/20'}`}>
+                              {dashboardData.strategicInsights_status}
+                            </span>
+                          )}
+                        </h3>
                           <ul className="space-y-2">
                             {data.strategicInsights.map((insight: any, i: number) => (
                               <motion.li whileHover={{ scale: 1.02 }} key={i} className="flex gap-3 text-sm text-gray-300 bg-yellow-500/5 p-3 rounded-lg border border-yellow-500/10 transition-all">
@@ -669,7 +604,14 @@ export default function Home() {
 
                       {data.recommendedActions && data.recommendedActions.length > 0 && (
                         <section>
-                          <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2"><Navigation className="text-blue-400" size={18} /> Action Items</h3>
+                          <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
+                          <Zap className="text-emerald-400" size={18} /> Action Items
+                          {dashboardData.recommendedActions_status && (
+                            <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider ${dashboardData.recommendedActions_status === 'LIVE GENERATED' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/20 text-amber-400 border border-amber-500/20'}`}>
+                              {dashboardData.recommendedActions_status}
+                            </span>
+                          )}
+                        </h3>
                           <ul className="space-y-2">
                             {data.recommendedActions.map((action: any, i: number) => (
                               <motion.li whileHover={{ scale: 1.02 }} key={i} className="flex gap-3 text-sm text-gray-300 bg-blue-500/5 p-3 rounded-lg border border-blue-500/10 transition-all">
@@ -699,20 +641,15 @@ export default function Home() {
               Recent Inbox
             </h2>
             <div className="flex-1 overflow-y-auto w-full no-scrollbar space-y-4">
-              {(!report || isGenerating) && (
+              {!isGenerating && Object.keys(dashboardData).length === 0 && (
                 <div className="h-full flex flex-col items-center justify-center text-gray-500 opacity-60">
                    <Clock size={32} className="mb-2" />
                    <p className="text-sm text-center">Awaiting intelligence data...</p>
                 </div>
               )}
-              {report && (() => {
-                let data;
-                try {
-                  const cleaned = report.replace(/```json/g, "").replace(/```/g, "").trim();
-                  data = JSON.parse(cleaned);
-                } catch (e) {
-                  return null;
-                }
+              {Object.keys(dashboardData).length > 0 && (() => {
+                let data = dashboardData;
+                
                 if (!data.sourceEmails || data.sourceEmails.length === 0) return <div className="text-sm text-gray-500 text-center mt-10">No source emails available.</div>;
                 
                 return data.sourceEmails.map((email: any, i: number) => (
