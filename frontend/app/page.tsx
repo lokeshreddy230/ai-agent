@@ -26,9 +26,11 @@ export default function Home() {
   const [newestEmailTime, setNewestEmailTime] = useState<string | null>(null);
   const [isStale, setIsStale] = useState(false);
 
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
   useEffect(() => {
     // Check initial auth status
-    fetch("http://127.0.0.1:8000/auth/status")
+    fetch(`${API_URL}/auth/status`)
       .then(res => res.json())
       .then(data => {
         if (data.authenticated) setIsAuthenticated(true);
@@ -86,7 +88,7 @@ export default function Home() {
     setAgentUpdates([{ type: "system", data: { agent: "OAuth Service", message: "Redirecting to Google for authentication..." } }]);
     
     try {
-      const response = await fetch("http://127.0.0.1:8000/auth/login");
+      const response = await fetch(`${API_URL}/auth/login`);
       const data = await response.json();
       if (data.status === "success" && data.url) {
         window.location.href = data.url;
@@ -154,7 +156,7 @@ export default function Home() {
     setReport(null);
     setAgentUpdates([]);
 
-    const eventSource = new EventSource("http://127.0.0.1:8000/agent-status");
+    const eventSource = new EventSource(`${API_URL}/agent-status`);
     
     eventSource.onmessage = (event) => {
       const parsedData = JSON.parse(event.data);
@@ -165,7 +167,7 @@ export default function Home() {
     };
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/generate-report", {
+      const response = await fetch(`${API_URL}/generate-report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_request: "Generate Daily Startup Report" })
