@@ -62,25 +62,36 @@ export async function POST(request: Request) {
           }
         }
 
-        // 2. Pre-AI Smart Clustering (0 Tokens)
-        sendEvent("agent_update", { agent: "Clustering Engine", status: "working", details: "Applying heuristic clustering..." });
+        // 2. Pre-AI Hybrid Heuristic Clustering (0 Tokens)
+        sendEvent("agent_update", { agent: "Clustering Engine", status: "working", details: "Applying hybrid heuristic tagging..." });
         
         let clusters = {
           linkedin: [] as any[],
-          github: [] as any[],
+          opportunities: [] as any[],
           promotions: [] as any[],
           highPriority: [] as any[]
         };
 
         for (const em of minifiedEmails) {
-          const str = (em.f + " " + em.s).toLowerCase();
-          if (str.includes("linkedin")) clusters.linkedin.push(em);
-          else if (str.includes("github")) clusters.github.push(em);
-          else if (str.includes("promo") || str.includes("offer") || str.includes("sale")) clusters.promotions.push(em);
-          else clusters.highPriority.push(em);
+          const str = (em.f + " " + em.s + " " + em.p).toLowerCase();
+          
+          if (str.includes("github") || str.includes("deploy") || str.includes("vercel") || str.includes("render")) {
+            const level = (str.includes("fail") || str.includes("error")) ? "HIGH" : "MEDIUM";
+            clusters.highPriority.push({ ...em, level, category: "DevOps / Infrastructure" });
+          } else if (str.includes("security") || str.includes("onedrive") || str.includes("google account") || str.includes("alert")) {
+            clusters.highPriority.push({ ...em, level: "HIGH", category: "Security Alert" });
+          } else if (str.includes("internshala") || str.includes("unstop") || str.includes("naukri") || str.includes("opportunity")) {
+            clusters.opportunities.push({ ...em, level: "MEDIUM", category: "Career Opportunity" });
+          } else if (str.includes("linkedin") || str.includes("connection") || str.includes("network")) {
+            clusters.linkedin.push({ ...em, level: "MEDIUM", category: "Networking" });
+          } else if (str.includes("promo") || str.includes("newsletter") || str.includes("update") || str.includes("offer") || str.includes("sale")) {
+            clusters.promotions.push({ ...em, level: "LOW", category: "Informational" });
+          } else {
+            clusters.highPriority.push({ ...em, level: "LOW", category: "General" });
+          }
         }
 
-        sendEvent("agent_update", { agent: "Clustering Engine", status: "completed", details: `Isolated ${clusters.highPriority.length} high-priority signals.` });
+        sendEvent("agent_update", { agent: "Clustering Engine", status: "completed", details: `Tagged ${clusters.highPriority.length} primary signals, ${clusters.opportunities.length} opportunities, ${clusters.linkedin.length} networking events.` });
 
         // 3. Fetch Tavily
         let rawTavily: any[] = [];
@@ -144,14 +155,14 @@ export async function POST(request: Request) {
         let priorityQueueData = [];
         let priorityQueueStatus = "LIVE GENERATED";
         try {
-          const prompt = `Extract priority queue items from these high-priority summaries:\n${batchSummaries.join("\n")}\n\nReturn strict JSON format: { "priorityQueue": [{"level": "HIGH/MEDIUM/LOW", "category": "...", "description": "...", "reason": "...", "confidence": "99%"}] }`;
+          const prompt = `Extract ALL meaningful operational signals from these high-priority summaries:\n${batchSummaries.join("\n")}\n\nDO NOT filter aggressively. Treat GitHub failures, OneDrive alerts, security warnings, and payment issues as HIGH priority. Treat ecosystem updates as MEDIUM priority. Surface at least 3 items if possible.\nReturn strict JSON format: { "priorityQueue": [{"level": "HIGH/MEDIUM/LOW", "category": "...", "description": "...", "reason": "...", "confidence": "99%"}] }`;
           const comp = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: "llama3-8b-8192", temperature: 0.1, response_format: { type: "json_object" } });
           const parsed = JSON.parse(comp.choices[0]?.message?.content || "{}");
           priorityQueueData = parsed.priorityQueue || [];
           if (priorityQueueData.length === 0) throw new Error("Empty priorityQueue");
         } catch(e) {
           priorityQueueStatus = "FALLBACK GENERATED";
-          priorityQueueData = clusters.highPriority.map(em => ({ level: "MEDIUM", category: "Inbox", description: em.s, reason: "Auto-clustered", confidence: "90%" })).slice(0, 5);
+          priorityQueueData = clusters.highPriority.map(em => ({ level: em.level, category: em.category, description: em.s, reason: "Auto-clustered", confidence: "90%" })).slice(0, 5);
         }
         sendEvent("section_update", { section: "priorityQueue", status: priorityQueueStatus, data: priorityQueueData });
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -161,7 +172,7 @@ export async function POST(request: Request) {
         let oppData = [], netData = [];
         let oppStatus = "LIVE GENERATED";
         try {
-          const prompt = `Extract opportunities and networking activity from these clustered emails:\n${JSON.stringify(clusters.linkedin)}\n${JSON.stringify(clusters.highPriority)}\n\nReturn strict JSON format: { "opportunities": ["..."], "networkingActivity": ["..."] }`;
+          const prompt = `Extract career opportunities, job/internship signals, and ALL networking activity (LinkedIn, profile views, connections).\nOpportunities: ${JSON.stringify(clusters.opportunities)}\nNetworking: ${JSON.stringify(clusters.linkedin)}\nHigh Priority Context: ${JSON.stringify(clusters.highPriority.slice(0, 5))}\n\nGenerate at least 2 opportunities and 2 networking items. If none are explicitly stated, infer potential networking opportunities from the context.\nReturn strict JSON format: { "opportunities": [{"title": "...", "description": "..."}], "networkingActivity": [{"title": "...", "description": "..."}] }`;
           const comp = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: "llama3-8b-8192", temperature: 0.1, response_format: { type: "json_object" } });
           const parsed = JSON.parse(comp.choices[0]?.message?.content || "{}");
           oppData = parsed.opportunities || [];
@@ -169,8 +180,8 @@ export async function POST(request: Request) {
           if (oppData.length === 0 && netData.length === 0) throw new Error("Empty opportunities/networking");
         } catch(e) {
           oppStatus = "FALLBACK GENERATED";
-          oppData = ["Review raw inbox for opportunities"];
-          netData = clusters.linkedin.map(em => em.s).slice(0, 5);
+          oppData = clusters.opportunities.length > 0 ? clusters.opportunities.map(em => ({ title: em.category, description: em.s })).slice(0, 5) : [{ title: "Review Inbox", description: "Review raw inbox for opportunities" }];
+          netData = clusters.linkedin.length > 0 ? clusters.linkedin.map(em => ({ title: em.category, description: em.s })).slice(0, 5) : [{ title: "LinkedIn Activity", description: "Monitor LinkedIn for recent engagement" }];
         }
         sendEvent("section_update", { section: "opportunities", status: oppStatus, data: oppData });
         sendEvent("section_update", { section: "networkingActivity", status: oppStatus, data: netData });
@@ -181,7 +192,7 @@ export async function POST(request: Request) {
         let execData = [], stratData = [], actionData = [];
         let execStatus = "LIVE GENERATED";
         try {
-          const prompt = `Extract strategic insights, action items, and executive intelligence from:\nNews: ${executiveDataJson}\nSummaries: ${batchSummaries.join("\n")}\n\nReturn strict JSON: { "strategicInsights": [{"insight": "...", "confidence": "95%"}], "recommendedActions": [{"action": "...", "confidence": "99%"}], "executiveIntelligence": [{"name": "...", "originalContent": "...", "sourceUrl": "...", "provider": "...", "fetchedAt": "...", "aiSummary": "...", "strategicImplication": "...", "recommendedAction": "...", "confidence": "98%"}] }`;
+          const prompt = `Generate executive-level strategic insights and auto-generate actionable items based on the current inbox state and news.\nNews: ${executiveDataJson}\nInbox Context: ${batchSummaries.join("\n")}\n\nYou must generate at least 2 Strategic Insights and 2 Action Items. Never leave these empty. Examples of Action Items: "Review GitHub deployment failure", "Respond to LinkedIn connection", "Check OneDrive".\nReturn strict JSON: { "strategicInsights": [{"insight": "...", "confidence": "95%"}], "recommendedActions": [{"action": "...", "confidence": "99%"}], "executiveIntelligence": [{"name": "...", "originalContent": "...", "sourceUrl": "...", "provider": "...", "fetchedAt": "...", "aiSummary": "...", "strategicImplication": "...", "recommendedAction": "...", "confidence": "98%"}] }`;
           const comp = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: "llama3-70b-8192", temperature: 0.1, response_format: { type: "json_object" } });
           const parsed = JSON.parse(comp.choices[0]?.message?.content || "{}");
           execData = parsed.executiveIntelligence || [];
@@ -190,8 +201,8 @@ export async function POST(request: Request) {
           if (execData.length === 0 && stratData.length === 0) throw new Error("Empty executive/strategic insights");
         } catch(e) {
           execStatus = "FALLBACK GENERATED";
-          stratData = [{ insight: "Rate limit prevented full AI synthesis.", confidence: "100%" }];
-          actionData = [{ action: "Manually review emails and news.", confidence: "99%" }];
+          stratData = [{ insight: "Review ecosystem updates and security alerts across clustered platforms.", confidence: "90%" }];
+          actionData = clusters.highPriority.length > 0 ? clusters.highPriority.map(em => ({ action: `Review ${em.category}: ${em.s}`, confidence: "95%" })).slice(0, 3) : [{ action: "Manually review emails and news.", confidence: "99%" }];
           execData = rawTavily.map(item => ({ name: item.title, originalContent: item.content, sourceUrl: item.url, fetchedAt: new Date().toISOString(), provider: "Tavily", aiSummary: "Auto-extracted", strategicImplication: "Review", recommendedAction: "Read", confidence: "100%" })).slice(0, 3);
         }
         sendEvent("section_update", { section: "strategicInsights", status: execStatus, data: stratData });
