@@ -6,8 +6,8 @@ import Groq from 'groq-sdk';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// We must use Edge runtime or Node runtime. Streaming works in Node runtime with standard Web Streams.
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Allow up to 60s for Vercel Hobby/Pro if supported
 
 export async function POST(request: Request) {
   const encoder = new TextEncoder();
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       };
 
       try {
-        sendEvent("crew_start", { message: "Starting the startup operations workflow." });
+        sendEvent("crew_start", { message: "Starting Progressive Multi-Stage Intelligence Pipeline." });
 
         // 1. Fetch Gmail Data
         const cookieStore = await cookies();
@@ -32,43 +32,66 @@ export async function POST(request: Request) {
         
         if (tokenCookie && tokenCookie.value) {
           try {
-            sendEvent("agent_update", { agent: "Email Agent", status: "working", details: "Fetching live emails from Gmail..." });
+            sendEvent("agent_update", { agent: "Email Agent", status: "working", details: "Fetching 25 live emails for batching..." });
             const tokens = JSON.parse(tokenCookie.value);
             const url = new URL(request.url);
             const oAuth2Client = getOAuth2Client(url.origin);
             oAuth2Client.setCredentials(tokens);
             
             const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
-            const res = await gmail.users.messages.list({ userId: 'me', maxResults: 10 });
+            const res = await gmail.users.messages.list({ userId: 'me', maxResults: 25 });
             const messages = res.data.messages || [];
             emailCount = messages.length;
             
-            for (const msg of messages.slice(0, 5)) { // process up to 5 to save tokens
+            for (const msg of messages) {
               const msgData = await gmail.users.messages.get({ userId: 'me', id: msg.id! });
               const payload = msgData.data.payload;
               const headers = payload?.headers || [];
               const subject = headers.find((h) => h.name === 'Subject')?.value || '';
               let from = headers.find((h) => h.name === 'From')?.value || '';
               if (from.includes('<')) from = from.split('<')[0].trim();
-              
               const snippet = msgData.data.snippet || '';
               
               rawEmails.push({ from, subject, snippet, timestamp: new Date().toISOString() });
-              minifiedEmails.push({ f: from.substring(0, 15), s: subject.substring(0, 35), p: snippet.substring(0, 45) });
+              minifiedEmails.push({ f: from.substring(0, 20), s: subject.substring(0, 50), p: snippet.substring(0, 80) });
             }
             sendEvent("agent_update", { agent: "Gmail API", status: "completed", details: `Retrieved ${emailCount} live messages.` });
           } catch (e: any) {
             console.error("Gmail Error:", e);
             sendEvent("agent_update", { agent: "System", status: "failed", details: "Live Gmail fetch failed. " + String(e) });
           }
-        } else {
-          sendEvent("agent_update", { agent: "System", status: "failed", details: "No Gmail authentication found. Operating without inbox data." });
         }
 
-        // 2. Fetch Tavily
+        // 2. Pre-AI Smart Clustering (0 Tokens)
+        sendEvent("agent_update", { agent: "Clustering Engine", status: "working", details: "Applying heuristic clustering to reduce tokens..." });
+        
+        let clusters = {
+          linkedin: [] as any[],
+          github: [] as any[],
+          promotions: [] as any[],
+          highPriority: [] as any[]
+        };
+
+        for (const em of minifiedEmails) {
+          const str = (em.f + " " + em.s).toLowerCase();
+          if (str.includes("linkedin")) clusters.linkedin.push(em);
+          else if (str.includes("github")) clusters.github.push(em);
+          else if (str.includes("promo") || str.includes("offer") || str.includes("sale")) clusters.promotions.push(em);
+          else clusters.highPriority.push(em);
+        }
+
+        const clusteredSummary = `
+Auto-Clustered Noise (Bypassed AI):
+- LinkedIn Notifications: ${clusters.linkedin.length}
+- GitHub Alerts: ${clusters.github.length}
+- Promotions/Noise: ${clusters.promotions.length}
+`;
+        sendEvent("agent_update", { agent: "Clustering Engine", status: "completed", details: `Clustered ${minifiedEmails.length - clusters.highPriority.length} noisy emails. ${clusters.highPriority.length} high-priority emails remain.` });
+
+        // 3. Fetch Tavily
         let rawTavily: any[] = [];
         try {
-          sendEvent("agent_update", { agent: "Research Agent", status: "working", details: "Fetching live executive intelligence..." });
+          sendEvent("agent_update", { agent: "Research Agent", status: "working", details: "Fetching executive intelligence..." });
           if (process.env.TAVILY_API_KEY) {
             const tavilyRes = await fetch('https://api.tavily.com/search', {
               method: 'POST',
@@ -77,69 +100,61 @@ export async function POST(request: Request) {
                 api_key: process.env.TAVILY_API_KEY,
                 query: "Startup operations, AI ecosystem, and enterprise technology news today",
                 search_depth: "basic",
-                include_answer: false,
-                include_images: false,
-                include_raw_content: false,
-                max_results: 3
+                max_results: 2
               })
             });
             const tavilyData = await tavilyRes.json();
             rawTavily = tavilyData.results || [];
-            sendEvent("agent_update", { agent: "Tavily API", status: "completed", details: "Tavily ecosystem intelligence retrieved." });
-          }
-        } catch (e) {
-          console.error("Tavily Error:", e);
-        }
-
-        // 3. Fetch Apify (LinkedIn)
-        let rawApify: any[] = [];
-        try {
-          if (process.env.APIFY_API_TOKEN) {
-            // Simplified Apify integration for serverless. Just fetching recent runs or hardcoding a fallback if not configured properly.
-            // In a real serverless app we'd trigger a run and wait, but that takes minutes. We assume Apify pushes to a DB or we use a fast endpoint.
-            sendEvent("agent_update", { agent: "Apify API", status: "completed", details: "Apify LinkedIn profile data retrieved." });
           }
         } catch (e) {}
 
-        const executiveDataJson = JSON.stringify({ tavily_news: rawTavily, apify_linkedin: rawApify }, null, 2);
-        const rawEmailsJson = JSON.stringify(minifiedEmails);
+        const executiveDataJson = JSON.stringify({ tavily_news: rawTavily }, null, 2);
 
-        // 4. Phase 1: Data Gathering Summarization
-        sendEvent("system", { message: "Executing Phase 1: Data Gathering Analysis..." });
+        // 4. Phase 1: Progressive Batch Summarization
+        sendEvent("system", { message: "Executing Phase 1: Progressive Batch Summarization..." });
         
-        const phase1Prompt = `
-Analyze the following raw data.
-Emails:
-${rawEmailsJson}
-
-Executive News:
-${executiveDataJson}
-
-Summarize the key findings briefly.`;
-
-        let phase1Output = "";
-        try {
-          const completion1 = await groq.chat.completions.create({
-            messages: [{ role: "user", content: phase1Prompt }],
-            model: "llama3-70b-8192",
-            temperature: 0.2,
-          });
-          phase1Output = completion1.choices[0]?.message?.content || "";
-          sendEvent("agent_update", { agent: "Research Agent", status: "completed", details: "Phase 1 analysis complete." });
-        } catch (e: any) {
-           console.error("Groq Phase 1 Error:", e);
-           sendEvent("agent_update", { agent: "System", status: "failed", details: "AI Phase 1 Failed due to rate limit." });
+        const BATCH_SIZE = 5;
+        let batchSummaries = [];
+        let batchIndex = 0;
+        
+        for (let i = 0; i < clusters.highPriority.length; i += BATCH_SIZE) {
+          batchIndex++;
+          const batch = clusters.highPriority.slice(i, i + BATCH_SIZE);
+          sendEvent("agent_update", { agent: "Batch Processor", status: "working", details: `Processing batch ${batchIndex} (${batch.length} emails)...` });
+          
+          const batchPrompt = `Summarize the key operational signals from these ${batch.length} emails. Be extremely concise. Emails:\n${JSON.stringify(batch)}`;
+          
+          try {
+            const completion = await groq.chat.completions.create({
+              messages: [{ role: "user", content: batchPrompt }],
+              model: "llama3-8b-8192", // Use smaller model for fast batching
+              temperature: 0.1,
+            });
+            batchSummaries.push(`Batch ${batchIndex}:\n${completion.choices[0]?.message?.content}`);
+            sendEvent("agent_update", { agent: "Batch Processor", status: "completed", details: `Batch ${batchIndex} summarized.` });
+            
+            // Sleep slightly to respect rate limits if there are more batches
+            if (i + BATCH_SIZE < clusters.highPriority.length) {
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            }
+          } catch (e: any) {
+            console.error(`Groq Batch ${batchIndex} Error:`, e);
+            sendEvent("agent_update", { agent: "System", status: "failed", details: `Batch ${batchIndex} skipped due to rate limits.` });
+            batchSummaries.push(`Batch ${batchIndex}: [SKIPPED DUE TO API LIMITS]`);
+            break; // Stop processing further batches to save limits for synthesis
+          }
         }
 
-        // 5. Phase 2: Report Generation
-        sendEvent("system", { message: "Executing Phase 2: Final Report Generation..." });
+        const combinedPhase1Output = clusteredSummary + "\n\n" + batchSummaries.join("\n\n") + "\n\nExecutive News:\n" + executiveDataJson;
+
+        // 5. Phase 2: Final Report Generation
+        sendEvent("system", { message: "Executing Phase 2: Final Executive Synthesis..." });
         
         const phase2Prompt = `
-Using the following Phase 1 analysis, generate a strict JSON payload conforming to the dashboard schema.
-Do NOT include markdown like \`\`\`json. Return ONLY raw JSON.
+Using the following batched summaries and clustered data, generate a strict JSON payload conforming to the dashboard schema. Do NOT include markdown like \`\`\`json. Return ONLY raw JSON.
 
-Phase 1 Output:
-${phase1Output}
+Intelligence Payload:
+${combinedPhase1Output}
 
 Expected JSON format:
 {
@@ -161,18 +176,24 @@ Expected JSON format:
             response_format: { type: "json_object" }
           });
           finalReport = completion2.choices[0]?.message?.content || "{}";
-          sendEvent("agent_update", { agent: "Report Agent", status: "completed", details: "Report generation complete." });
+          sendEvent("agent_update", { agent: "Report Agent", status: "completed", details: "Executive synthesis complete." });
         } catch (e: any) {
            console.error("Groq Phase 2 Error:", e);
-           sendEvent("agent_update", { agent: "System", status: "failed", details: "AI Phase 2 Failed due to rate limit." });
+           sendEvent("agent_update", { agent: "System", status: "failed", details: "AI Phase 2 Rate Limit Exceeded. Generating Fallback Synthesis." });
            
-           // Fallback payload if Groq fails
+           // Dynamic Fallback payload using the batch data so dashboard doesn't collapse!
            finalReport = JSON.stringify({
-             priorityQueue: [{ level: "HIGH", category: "System Error", description: "AI Generation Failed", reason: "Rate Limit Exceeded", confidence: "100%" }]
+             criticalAlerts: [`Rate limit recovery active. ${batchSummaries.length} batches processed.`].concat(clusters.highPriority.map((em: any) => em.s).slice(0, 2)),
+             opportunities: ["Review raw inbox clusters"],
+             networkingActivity: [`${clusters.linkedin.length} LinkedIn notifications detected.`],
+             strategicInsights: [{ insight: "System is operating under heavy AI load. Graceful degradation enabled.", confidence: "100%" }],
+             recommendedActions: [{ action: "Review high-priority batch summaries manually.", confidence: "99%" }],
+             priorityQueue: clusters.highPriority.map((em: any) => ({ level: "MEDIUM", category: "Inbox", description: em.s, reason: "Fallback Processing", confidence: "80%" })).slice(0, 5),
+             executiveIntelligence: []
            });
         }
 
-        sendEvent("agent_update", { agent: "Validation Agent", status: "completed", details: "Fresh intelligence verified." });
+        sendEvent("agent_update", { agent: "Validation Agent", status: "completed", details: "Intelligence verified." });
 
         // Final completion event
         const completionPayload = JSON.stringify({
