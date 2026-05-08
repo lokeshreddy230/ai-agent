@@ -188,10 +188,12 @@ export default function Home() {
                   [parsedData.section]: parsedData.data,
                   [`${parsedData.section}_status`]: parsedData.status
                 }));
+                console.log(`[Section Update] ${parsedData.section}:`, parsedData.data);
               } else if (parsedData.type === "agent_update" || parsedData.type === "system") {
                 setAgentUpdates((prev) => [...prev, parsedData]);
               } else if (parsedData.type === "crew_complete" || parsedData.report) {
                 finalData = parsedData;
+                console.log("[Crew Complete] Final Stream Metadata:", finalData);
               }
             } catch (e) {
               console.warn("Failed to parse stream line:", line);
@@ -679,14 +681,8 @@ export default function Home() {
       </div>
 
       {/* Executive Intelligence Feed */}
-      {report && (() => {
-        let data;
-        try {
-          const cleaned = report.replace(/```json/g, "").replace(/```/g, "").trim();
-          data = JSON.parse(cleaned);
-        } catch (e) {
-          return null;
-        }
+      {Object.keys(dashboardData).length > 0 && (() => {
+        let data = dashboardData;
         
         if (data.executiveIntelligence && data.executiveIntelligence.length > 0) {
           return (

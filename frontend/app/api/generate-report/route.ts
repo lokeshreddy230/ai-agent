@@ -203,7 +203,7 @@ export async function POST(request: Request) {
             source: "LIVE",
             count: emailCount,
             new_count: 0,
-            newest_timestamp: "Just now",
+            newest_timestamp: rawEmails.length > 0 ? rawEmails[0].timestamp : "Unknown",
             raw_emails: rawEmails,
             raw_executive: rawTavily
           }
