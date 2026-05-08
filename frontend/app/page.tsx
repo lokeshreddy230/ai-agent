@@ -183,12 +183,13 @@ export default function Home() {
             try {
               const parsedData = JSON.parse(line);
               if (parsedData.type === "section_update") {
+                const sectionData = parsedData.data;
                 setDashboardData((prev: any) => ({
                   ...prev,
-                  [parsedData.section]: parsedData.data,
-                  [`${parsedData.section}_status`]: parsedData.status
+                  [sectionData.section]: sectionData.data,
+                  [`${sectionData.section}_status`]: sectionData.status
                 }));
-                console.log(`[Section Update] ${parsedData.section}:`, parsedData.data);
+                console.log(`[Section Update] ${sectionData.section}:`, sectionData.data);
               } else if (parsedData.type === "agent_update" || parsedData.type === "system") {
                 setAgentUpdates((prev) => [...prev, parsedData]);
               } else if (parsedData.type === "crew_complete" || parsedData.report) {

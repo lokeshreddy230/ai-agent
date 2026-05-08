@@ -209,6 +209,7 @@ export async function POST(request: Request) {
         sendEvent("section_update", { section: "recommendedActions", status: execStatus, data: actionData });
         sendEvent("section_update", { section: "executiveIntelligence", status: execStatus, data: execData });
 
+        sendEvent("agent_update", { agent: "Report Agent", status: "completed", details: "Distributed generation completed." });
         sendEvent("agent_update", { agent: "Validation Agent", status: "completed", details: "Sectional rendering complete." });
 
         // Final completion event (no monolithic report needed anymore)
