@@ -156,23 +156,44 @@ export default function Home() {
     setReport(null);
     setAgentUpdates([]);
 
-    const eventSource = new EventSource(`${API_URL}/agent-status`);
-    
-    eventSource.onmessage = (event) => {
-      const parsedData = JSON.parse(event.data);
-      setAgentUpdates((prev) => [...prev, parsedData]);
-      if (parsedData.type === "crew_complete") {
-        eventSource.close();
-      }
-    };
-
     try {
-      const response = await fetch(`${API_URL}/generate-report`, {
+      const response = await fetch(`${API_URL}/api/generate-report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_request: "Generate Daily Startup Report" })
       });
-      const data = await response.json();
+      
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let finalData = null;
+
+      if (reader) {
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || ""; // Keep the last incomplete line in the buffer
+          
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const parsedData = JSON.parse(line);
+              if (parsedData.type === "agent_update" || parsedData.type === "system") {
+                setAgentUpdates((prev) => [...prev, parsedData]);
+              } else if (parsedData.type === "crew_complete" || parsedData.report) {
+                finalData = parsedData;
+              }
+            } catch (e) {
+              console.warn("Failed to parse stream line:", line);
+            }
+          }
+        }
+      }
+
+      const data = finalData || { status: "error", fallback_required: true };
       const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       
       if (data.status === "error" || data.fallback_required) {
