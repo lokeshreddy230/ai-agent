@@ -1,28 +1,63 @@
-# Executive OS Deployment Guide (Custom Server / VPS)
+# Executive OS Deployment Guide (Termux / Android)
 
-This guide details how to deploy the full Executive OS stack onto your own VPS/server instead of Vercel.
+This guide details how to deploy the full Executive OS stack natively onto an Android device using Termux and `proot-distro` (Ubuntu).
 
-**MISSION:** Deploy a persistent autonomous AI operating system with an always-on intelligence platform and self-hosted executive assistant.
+**MISSION:** Deploy a persistent autonomous AI operating system with an always-on intelligence platform and self-hosted executive assistant directly on your mobile device.
 
-The deployment supports:
-- Next.js frontend & API routes
-- WhatsApp automation (Puppeteer & whatsapp-web.js)
-- Persistent memory
-- Gmail OAuth
-- SSE streaming
-- Autonomous agents
-
-## Server Requirements
-- **OS:** Ubuntu 22.04
-- **Runtime:** Node.js 20+
-- **Process Manager:** PM2
-- **Web Server:** Nginx
-- **Security:** SSL (HTTPS)
-- **VCS:** Git
+*Note: This server is NOT a traditional Ubuntu VPS. Standard VPS instructions (like Nginx, systemd) do not apply here.*
 
 ---
 
-## 1. Clone Repository
+## 1. Install Ubuntu Inside Termux
+
+Open your Termux app and run the following to install a full Ubuntu environment:
+
+```bash
+pkg update && pkg upgrade -y
+pkg install proot-distro -y
+proot-distro install ubuntu
+```
+
+---
+
+## 2. Login to Ubuntu
+
+```bash
+proot-distro login ubuntu
+```
+
+---
+
+## 3. Install System Packages
+
+Inside the Ubuntu environment, install the necessary dependencies for building the app and running Puppeteer/Chromium:
+
+```bash
+apt update && apt upgrade -y
+
+apt install -y \
+  git \
+  curl \
+  wget \
+  nano \
+  build-essential \
+  chromium-browser
+```
+
+---
+
+## 4. Install Node.js
+
+Install Node.js 20.x:
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt install -y nodejs
+```
+
+---
+
+## 5. Clone Project
 
 ```bash
 git clone <repo-url>
@@ -31,7 +66,7 @@ cd frontend
 
 ---
 
-## 2. Install Node Dependencies
+## 6. Install Dependencies
 
 ```bash
 npm install
@@ -39,37 +74,7 @@ npm install
 
 ---
 
-## 3. Install Chrome Dependencies for WhatsApp
-
-WhatsApp-web.js requires a headless Chromium instance to operate. Install the necessary system dependencies:
-
-```bash
-sudo apt update
-
-sudo apt install -y \
-  ca-certificates \
-  fonts-liberation \
-  libappindicator3-1 \
-  libasound2t64 \
-  libatk-bridge2.0-0 \
-  libatk1.0-0 \
-  libcups2 \
-  libdbus-1-3 \
-  libgbm1 \
-  libgtk-3-0 \
-  libnspr4 \
-  libnss3 \
-  libx11-xcb1 \
-  libxcomposite1 \
-  libxdamage1 \
-  libxrandr2 \
-  xdg-utils \
-  wget
-```
-
----
-
-## 4. Environment Variables
+## 7. Environment Variables
 
 Create your environment file:
 
@@ -91,127 +96,52 @@ NEXTAUTH_SECRET=
 
 ---
 
-## 5. Build Next.js App
+## 8. Puppeteer Config Fix
 
-```bash
-npm run build
-```
+The codebase is already configured to detect your Linux environment and use the native `chromium-browser` executable. This is necessary because the bundled Puppeteer Chromium often fails inside native Termux/proot without heavy patching.
 
----
-
-## 6. Start Using PM2
-
-PM2 will keep the Next.js server alive in the background and automatically restart it on failure.
-
-```bash
-# Install PM2 globally
-npm install -g pm2
-
-# Start the application
-pm2 start npm --name executive-os -- start
-
-# Save the PM2 process list and configure it to start on boot
-pm2 save
-pm2 startup
-```
-
----
-
-## 7. Nginx Reverse Proxy
-
-Configure Nginx to route traffic to the Next.js server and handle SSE (Server-Sent Events) streaming correctly.
-
-Create the Nginx configuration file:
-
-```bash
-sudo nano /etc/nginx/sites-available/executive-os
-```
-
-Add the following configuration:
-
-```nginx
-server {
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://localhost:3000;
-
-        proxy_http_version 1.1;
-
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
-```
-
-Enable the configuration and restart Nginx:
-
-```bash
-sudo ln -s /etc/nginx/sites-available/executive-os /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
-```
-
----
-
-## 8. Enable HTTPS
-
-Secure the dashboard with SSL via Let's Encrypt.
-
-```bash
-# Install Certbot
-sudo apt install certbot python3-certbot-nginx
-
-# Generate and apply SSL certificates
-sudo certbot --nginx -d your-domain.com
-```
-
----
-
-## 9. WhatsApp Session Persistence
-
-Ensure that the `.whatsapp-session` folder and `memory.json` file are persisting across restarts.
-PM2 will not wipe these directories, allowing the WhatsApp QR login and autonomous context memory to survive server restarts.
-
----
-
-## 10. Puppeteer Server Mode
-
-Inside `lib/whatsapp.ts`, Puppeteer is already configured with the correct flags for a headless Linux environment:
-
+*The configuration in `lib/whatsapp.ts` looks like this:*
 ```javascript
 puppeteer: {
   headless: true,
-  args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+  executablePath: process.platform === 'linux' ? '/usr/bin/chromium-browser' : undefined,
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage'
+  ]
 }
 ```
-*Note: This configuration prevents sandbox-related crashes when running as root or a restricted user on Ubuntu.*
 
 ---
 
-## 11. Firewall Configuration
+## 9. Start Application
 
-Expose the necessary web ports while keeping the internal Next.js port (3000) private.
+Build and start the Next.js server:
 
 ```bash
-sudo ufw allow 80
-sudo ufw allow 443
-sudo ufw allow OpenSSH
-sudo ufw enable
+npm run build
+npm start
 ```
 
 ---
 
-## 12. Final Verification
+## 10. Optional: Keep Alive with PM2
 
-Access your domain `https://your-domain.com` and verify the following:
+To ensure the process stays alive in the background:
 
-- [ ] Gmail OAuth login works
-- [ ] WhatsApp QR login successfully generates and authenticates
-- [ ] SSE streaming successfully populates the dashboard
-- [ ] Autonomous replies dispatch correctly
-- [ ] Memory persists after executing a PM2 restart (`pm2 restart executive-os`)
-- [ ] HTTPS lock icon appears correctly on your domain
+```bash
+npm install -g pm2
+pm2 start npm --name executive-os -- start
+```
+
+---
+
+## 11. Final Verification
+
+Your Executive OS should now run:
+- [ ] Inside Ubuntu proot
+- [ ] On an Android device
+- [ ] With working Chromium
+- [ ] With working WhatsApp automation
+- [ ] With persistent memory (`memory.json`)

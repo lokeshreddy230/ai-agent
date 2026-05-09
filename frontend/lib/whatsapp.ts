@@ -29,6 +29,7 @@ export const getWhatsAppClient = () => {
     authStrategy: new LocalAuth({ dataPath: path.join(process.cwd(), '.whatsapp-session') }),
     puppeteer: {
       headless: true,
+      executablePath: process.platform === 'linux' ? '/usr/bin/chromium-browser' : undefined,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     }
   });
