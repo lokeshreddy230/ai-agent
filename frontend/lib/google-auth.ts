@@ -2,7 +2,11 @@ import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
 
-const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
+const SCOPES = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/gmail.modify"
+];
 
 export function getOAuth2Client(origin: string) {
   const credentialsPath = path.join(process.cwd(), 'credentials.json');
